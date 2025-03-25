@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 
-import { version } from '../../package.json';
+import packageJson from '../../package.json';
 
 @Component({
   selector: 'app-root',
@@ -9,5 +9,5 @@ import { version } from '../../package.json';
 })
 export class AppComponent {
   title = 'pdp';
-  version = version;
+  version = packageJson.version;
 }
