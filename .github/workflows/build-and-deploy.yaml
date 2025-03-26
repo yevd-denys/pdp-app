@@ -47,7 +47,5 @@ jobs:
           docker push $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$IMAGE_TAG
 
       - name: Trigger Lambda Deployment
-        env:
-          IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_NAME }}:${{ github.sha }}
         run: |
-          curl -X POST -H "Content-Type: application/json" -d "{\"image_uri\": \"$IMAGE_URI\"}" "${{ secrets.LAMBDA_WEBHOOK_URL }}"
+          curl -X POST -H "Content-Type: application/json" -d "{\"image_uri\": \"${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_NAME }}:${{ github.sha }}\"}" "${{ secrets.LAMBDA_WEBHOOK_URL }}"
