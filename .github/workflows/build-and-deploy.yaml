@@ -1,16 +1,27 @@
 name: Deploy Angular App to ECR
+
 on:
   push:
     branches:
       - main
 
 jobs:
-  build_and_push:
+  one_run:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.12.1
+
+  dependencies:
+    needs: one_run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        id: cache
+        with:
+          path: node_modules
+          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -18,13 +29,61 @@ jobs:
           node-version: '22'
 
       - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
         run: npm ci
 
+  test:
+    needs: dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/cache@v3
+        id: cache
+        with:
+          path: node_modules
+          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
+
       - name: Run tests
+        if: steps.cache.outputs.cache-hit != 'true'
         run: npm run test:ci
+
+  build:
+    needs: dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
 
       - name: Build Angular app
         run: npm run build
+
+  build_and_push_docker_image:
+    needs: [test, build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -37,7 +96,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build and push Docker image
+      - name: Build and push
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -46,6 +105,10 @@ jobs:
           docker build -t $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$IMAGE_TAG .
           docker push $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$IMAGE_TAG
 
+  trigger_lambda_deployment:
+    needs: build_and_push_docker_image
+    runs-on: ubuntu-latest
+    steps:
       - name: Trigger Lambda Deployment
         run: |
           curl -X POST \
