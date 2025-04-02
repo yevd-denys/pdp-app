@@ -1,5 +1,7 @@
 # Stage 1: Build the Angular application
 FROM node:18-alpine as builder
+ARG VERSION
+LABEL version=$VERSION
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
