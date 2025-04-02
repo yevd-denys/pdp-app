@@ -8,6 +8,7 @@ on:
 jobs:
   one_run:
     runs-on: ubuntu-latest
+
     steps:
       - name: Cancel Previous Runs
         uses: styfle/cancel-workflow-action@0.12.1
@@ -15,6 +16,7 @@ jobs:
   dependencies:
     needs: one_run
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3
       - uses: actions/cache@v3
@@ -105,13 +107,11 @@ jobs:
           docker build -t $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$IMAGE_TAG .
           docker push $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$IMAGE_TAG
 
-  trigger_lambda_deployment:
-    needs: build_and_push_docker_image
-    runs-on: ubuntu-latest
-    steps:
       - name: Trigger Lambda Deployment
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           curl -X POST \
             -H "Content-Type: application/json" \
-            -d "{\"image_uri\":\"${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY_NAME }}:${{ github.sha }}\"}" \
+            -d "{\"image_uri\":\"$ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:${{ github.sha }}\"}" \
             "${{ secrets.LAMBDA_WEBHOOK_URL }}"
