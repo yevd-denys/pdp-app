@@ -1,0 +1,169 @@
+name: Deploy Angular App to S3
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  one_run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.12.1
+
+  dependencies:
+    needs: one_run
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v4
+        id: dependencies
+        with:
+          path: node_modules
+          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        run: npm ci
+
+  test:
+    needs: dependencies
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/cache@v3
+        id: cache
+        with:
+          path: node_modules
+          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
+
+      - name: Run tests
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm run test:ci
+
+  build:
+    needs: dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
+
+      - name: Build Angular app
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: ./build
+
+      - name: Get package.json version
+        id: get_version
+        run: |
+          echo "VERSION=$(jq -r .version package.json)" >> $GITHUB_OUTPUT
+
+  deploy:
+    name: Deploy to AWS S3 and Invalidate CloudFront
+    runs-on: ubuntu-latest
+    needs: [test, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    env:
+      APP_VERSION: ${{ needs.build.outputs.version }}
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: ./build
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: eu-central-1
+
+      - name: Deploy to S3 Versioned Folder
+        run: |
+          echo "Deploying version ${{ env.APP_VERSION }} to s3://pdp-static-artifacts-11-2026 /${{ env.APP_VERSION }}/"
+          aws s3 sync ./build s3://pdp-static-artifacts-11-2026 /${{ env.APP_VERSION }}/ --delete
+
+      # NEW: Create and upload the root redirect file
+      - name: Create and Upload Root Redirect
+        run: |
+          echo "Creating redirect file..."
+          echo "<!DOCTYPE html>
+          <html>
+          <head>
+            <title>Redirecting...</title>
+            <meta http-equiv=\"refresh\" content=\"0; url=./${{ env.APP_VERSION }}/index.html\" />
+            <script type=\"text/javascript\">
+              window.location.href = \"./${{ env.APP_VERSION }}/\" + window.location.search + window.location.hash;
+            </script>
+          </head>
+          <body>
+            <p>If you are not redirected, <a href=\"./${{ env.APP_VERSION }}/index.html\">click here</a>.</p>
+          </body>
+          </html>" > ./index.html
+
+          echo "Uploading redirect file to s3://pdp-static-artifacts-11-2026/index.html"
+          aws s3 cp ./index.html s3://pdp-static-artifacts-11-2026/index.html \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "text/html"
+
+      - name: Invalidate CloudFront Cache
+        run: |
+          echo "Invalidating CloudFront paths: /index.html and /${{ env.APP_VERSION }}/*"
+          aws cloudfront create-invalidation \
+            --distribution-id E2L8JR7WMO5HWP \
+            --paths "/index.html" "/${{ env.APP_VERSION }}/*"
+
+  notify-slack:
+    name: Send Slack Notification
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+
+    steps:
+      - name: Send Deployment Notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_COLOR: ${{ needs.deploy.result == 'success' && 'good' || 'danger' }}
+          SLACK_TITLE: "Deployment Status: ${{ needs.deploy.result == 'success' && 'Success' || 'Failed' }}"
+          SLACK_MESSAGE: |
+            Deployment of *v${{ needs.build-and-test.outputs.version }}* to production finished.
+            *Commit:* `${{ github.event.head_commit.message }}`
+            *Triggered by:* `${{ github.actor }}`
+            *See changes:* <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|View Commit>
+            *View build logs:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Workflow Run>
