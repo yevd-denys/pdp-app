@@ -124,7 +124,7 @@ jobs:
       - name: Deploy to S3 Root
         run: |
           echo "Deploying version ${{ env.APP_VERSION }} to s3://${{ env.S3_BUCKET_NAME }}/"
-          aws s3 sync ./build-output s3://${{ env.S3_BUCKET_NAME }}/ --delete
+          aws s3 sync ./build-output s3://${{ env.S3_BUCKET_NAME }}/ --delete --exclude "*/*"
 
       - name: Set Cache-Control for Root Files
         run: |
