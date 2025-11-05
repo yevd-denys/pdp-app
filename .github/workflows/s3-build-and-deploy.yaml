@@ -145,6 +145,9 @@ jobs:
     needs: deploy
     if: always()
 
+    env:
+      TEST_ENV: https://dysp8kussf85a.cloudfront.net/
+
     steps:
       - name: Send Deployment Notification
         uses: rtCamp/action-slack-notify@v2
@@ -153,7 +156,7 @@ jobs:
           SLACK_COLOR: ${{ needs.deploy.result == 'success' && 'good' || 'danger' }}
           SLACK_TITLE: "Deployment Status: ${{ needs.deploy.result == 'success' && 'Success' || 'Failed' }}"
           SLACK_MESSAGE: |
-            Deployment of *v${{ needs.build-and-test.outputs.version }}* to production finished.
+            Deployment of *v${{ needs.build.outputs.version }}* to <${{ env.TEST_ENV }}|TEST ENV> finished.
             *Commit:* `${{ github.event.head_commit.message }}`
             *Triggered by:* `${{ github.actor }}`
             *See changes:* <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|View Commit>
