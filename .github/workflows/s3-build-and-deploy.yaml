@@ -142,7 +142,7 @@ jobs:
   notify-slack:
     name: Send Slack Notification
     runs-on: ubuntu-latest
-    needs: deploy
+    needs: [build, deploy]
     if: always()
 
     env:
