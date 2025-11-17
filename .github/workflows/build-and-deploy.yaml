@@ -1,132 +1,133 @@
-#name: Deploy Angular App to ECR
-#
-#on:
-#  push:
-#    branches:
-#      - main
-#
-#jobs:
-#  one_run:
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#      - name: Cancel Previous Runs
-#        uses: styfle/cancel-workflow-action@0.12.1
-#
-#  dependencies:
-#    needs: one_run
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#      - uses: actions/checkout@v3
-#      - uses: actions/cache@v4
-#        id: dependencies
-#        with:
-#          path: node_modules
-#          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
-#
-#      - name: Set up Node.js
-#        uses: actions/setup-node@v3
-#        with:
-#          node-version: '22'
-#
-#      - name: Install dependencies
-#        if: steps.dependencies.outputs.cache-hit != 'true'
-#        run: npm ci
-#
-#  test:
-#    needs: dependencies
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#      - uses: actions/checkout@v3
-#        with:
-#          ref: ${{ github.event.pull_request.head.ref }}
-#          fetch-depth: 0
-#
-#      - uses: actions/cache@v3
-#        id: cache
-#        with:
-#          path: node_modules
-#          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
-#
-#      - name: Run tests
-#        if: steps.cache.outputs.cache-hit != 'true'
-#        run: npm run test:ci
-#
-#  build:
-#    needs: dependencies
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#      - uses: actions/checkout@v3
-#        with:
-#          ref: ${{ github.event.pull_request.head.ref }}
-#          fetch-depth: 0
-#
-#      - uses: actions/cache@v3
-#        with:
-#          path: node_modules
-#          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
-#
-#      - name: Build Angular app
-#        run: npm run build
-#
-#      - name: Cache build
-#        uses: actions/cache@v4
-#        with:
-#          path: dist/pdp
-#          key: build-${{ runner.os }}-${{ github.sha }}
-#
-#  build_and_push_docker_image:
-#    needs: [test, build]
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#      - uses: actions/checkout@v3
-#        with:
-#          ref: ${{ github.event.pull_request.head.ref }}
-#          fetch-depth: 0
-#
-#      - name: Restore build
-#        uses: actions/cache@v4
-#        with:
-#          path: dist/pdp
-#          key: build-${{ runner.os }}-${{ github.sha }}
-#
-#      - name: Save VERSION to the environment
-#        id: version
-#        run: |
-#          VERSION=$(jq -r '.version' package.json)
-#          echo "VERSION=$VERSION" >> $GITHUB_ENV
-#
-#      - name: Configure AWS credentials
-#        uses: aws-actions/configure-aws-credentials@v2
-#        with:
-#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#          aws-region: ${{ secrets.AWS_REGION }}
-#
-#      - name: Login to Amazon ECR
-#        id: login-ecr
-#        uses: aws-actions/amazon-ecr-login@v1
-#        with:
-#          mask-password: 'true'
-#
-#      - name: Build and push
-#        id: build-image
-#        env:
-#          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-#          IMAGE_TAG: ${{ github.sha }}
-#        run: |
-#          docker build --build-arg VERSION=$VERSION -t $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$VERSION .
-#          docker push $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$VERSION
-#
-#      - name: Trigger Lambda Deployment
-#        env:
-#          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-#        run: |
-#          curl -X POST \
-#            -H "Content-Type: application/json" \
-#            -d "{\"image_uri\":\"$ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$VERSION\"}" \
-#            "${{ secrets.LAMBDA_WEBHOOK_URL }}"
+name: Deploy Angular App to ECR
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  one_run:
+    if: false
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Cancel Previous Runs
+        uses: styfle/cancel-workflow-action@0.12.1
+
+  dependencies:
+    needs: one_run
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v4
+        id: dependencies
+        with:
+          path: node_modules
+          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        run: npm ci
+
+  test:
+    needs: dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/cache@v3
+        id: cache
+        with:
+          path: node_modules
+          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
+
+      - name: Run tests
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm run test:ci
+
+  build:
+    needs: dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: pdp_app_node_modules-${{ hashFiles('package-lock.json') }}
+
+      - name: Build Angular app
+        run: npm run build
+
+      - name: Cache build
+        uses: actions/cache@v4
+        with:
+          path: dist/pdp
+          key: build-${{ runner.os }}-${{ github.sha }}
+
+  build_and_push_docker_image:
+    needs: [test, build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Restore build
+        uses: actions/cache@v4
+        with:
+          path: dist/pdp
+          key: build-${{ runner.os }}-${{ github.sha }}
+
+      - name: Save VERSION to the environment
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
+
+      - name: Build and push
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build --build-arg VERSION=$VERSION -t $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$VERSION .
+          docker push $ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$VERSION
+
+      - name: Trigger Lambda Deployment
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"image_uri\":\"$ECR_REGISTRY/${{ secrets.ECR_REPOSITORY_NAME }}:$VERSION\"}" \
+            "${{ secrets.LAMBDA_WEBHOOK_URL }}"
